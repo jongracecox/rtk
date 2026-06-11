@@ -1,0 +1,34 @@
+[filters.prek]
+description = "Compact prek output (failures only)"
+match_command = "^prek\\b"
+strip_ansi = true
+strip_lines_matching = [
+  "^\\[INFO\\] Installing environment",
+  "^\\[INFO\\] Once installed this environment will be reused",
+  "^\\[INFO\\] This may take a few minutes",
+  "\\.{3,}Passed\\s*$",
+  "^\\s*$",
+]
+max_lines = 40
+on_empty = "prek: all hooks passed"
+
+[[tests.prek]]
+name = "strips passed hooks, keeps failures"
+input = """
+check yaml...............................................................Passed
+check for case conflicts.................................................Passed
+trim trailing whitespace.................................................Failed
+- hook id: trailing-whitespace
+- exit code: 1
+- files were modified by this hook
+"""
+expected = "trim trailing whitespace.................................................Failed\n- hook id: trailing-whitespace\n- exit code: 1\n- files were modified by this hook"
+
+[[tests.prek]]
+name = "all passed — emits on_empty summary"
+input = """
+check yaml...............................................................Passed
+check for case conflicts.................................................Passed
+trim trailing whitespace.................................................Passed
+"""
+expected = "prek: all hooks passed"
