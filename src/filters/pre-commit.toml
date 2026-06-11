@@ -1,17 +1,19 @@
 [filters.pre-commit]
-description = "Compact pre-commit output"
+description = "Compact pre-commit output (failures only)"
 match_command = "^pre-commit\\b"
 strip_ansi = true
 strip_lines_matching = [
   "^\\[INFO\\] Installing environment",
   "^\\[INFO\\] Once installed this environment will be reused",
   "^\\[INFO\\] This may take a few minutes",
+  "\\.{3,}Passed\\s*$",
   "^\\s*$",
 ]
 max_lines = 40
+on_empty = "pre-commit: all hooks passed"
 
 [[tests.pre-commit]]
-name = "strips INFO install noise, keeps hook results"
+name = "strips INFO noise and passed hooks, keeps failures"
 input = """
 [INFO] Installing environment for https://github.com/psf/black.
 [INFO] Once installed this environment will be reused.
@@ -22,14 +24,14 @@ Check Yaml...............................................................Failed
 - hook id: check-yaml
 - exit code: 1
 """
-expected = "Trim Trailing Whitespace.................................................Passed\nFix End of Files.........................................................Passed\nCheck Yaml...............................................................Failed\n- hook id: check-yaml\n- exit code: 1"
+expected = "Check Yaml...............................................................Failed\n- hook id: check-yaml\n- exit code: 1"
 
 [[tests.pre-commit]]
-name = "all passed — no INFO noise"
+name = "all passed — emits on_empty summary"
 input = """
 [INFO] Installing environment for https://github.com/pre-commit/mirrors-isort.
 [INFO] Once installed this environment will be reused.
 isort....................................................................Passed
 black....................................................................Passed
 """
-expected = "isort....................................................................Passed\nblack....................................................................Passed"
+expected = "pre-commit: all hooks passed"
