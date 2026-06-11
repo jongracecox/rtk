@@ -665,6 +665,15 @@ pub const RULES: &[RtkRule] = &[
         subcmd_savings: &[],
         subcmd_status: &[],
     },
+    RtkRule {
+        pattern: r"^databricks\s+(bundle\s+validate|jobs\s+list-runs)\b",
+        rtk_cmd: "rtk databricks",
+        rewrite_prefixes: &["databricks"],
+        category: "Infra",
+        savings_pct: 90.0,
+        subcmd_savings: &[],
+        subcmd_status: &[],
+    },
 ];
 
 pub const IGNORED_PREFIXES: &[&str] = &[
