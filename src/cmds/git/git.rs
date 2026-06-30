@@ -941,6 +941,31 @@ fn build_commit_command(args: &[String], global_args: &[String]) -> Command {
     cmd
 }
 
+lazy_static::lazy_static! {
+    /// Signals that `git commit` output contains pre-commit / prek hook results
+    /// (a passed/failed/skipped status line, or a hook-failure detail block).
+    static ref HOOK_OUTPUT_RE: regex::Regex =
+        regex::Regex::new(r"(?m)^\s*-\s*hook id:|\.{3,}.*(Passed|Failed|Skipped)\s*$")
+            .expect("valid hook-output regex");
+}
+
+/// When a pre-commit / prek hook aborts a commit, the hook framework prints its
+/// per-hook results — and git redirects that output to stderr. Detect it and run
+/// the combined output through the same TOML filter RTK applies to standalone
+/// `pre-commit` / `prek` commands, so passed/skipped hooks are stripped and only
+/// failures remain. Returns `None` if the output does not look like hook output
+/// (e.g. a plain commit error), so the caller falls back to raw passthrough.
+fn filter_commit_hook_failure(stdout: &str, stderr: &str) -> Option<String> {
+    // git sends hook output to stderr, but tolerate either stream / framework.
+    let combined = format!("{}{}", stdout, stderr);
+    if !HOOK_OUTPUT_RE.is_match(&combined) {
+        return None;
+    }
+
+    let filter = crate::core::toml_filter::find_matching_filter("pre-commit")?;
+    Some(crate::core::toml_filter::apply_filter(filter, &combined))
+}
+
 fn run_commit(args: &[String], verbose: u8, global_args: &[String]) -> Result<i32> {
     let timer = tracking::TimedExecution::start();
 
@@ -987,6 +1012,15 @@ fn run_commit(args: &[String], verbose: u8, global_args: &[String]) -> Result<i3
             &raw_output,
             "ok (nothing to commit)",
         );
+    } else if let Some(compact) = filter_commit_hook_failure(&stdout, &stderr) {
+        // A pre-commit / prek hook aborted the commit. Reuse the framework's
+        // TOML filter to strip passed/skipped hook noise, keeping only failures.
+        eprint!("{}", compact);
+        if !compact.ends_with('\n') {
+            eprintln!();
+        }
+        timer.track(&original_cmd, "rtk git commit", &raw_output, &compact);
+        return Ok(exit_code_from_output(&output, "git"));
     } else {
         if !stderr.trim().is_empty() {
             eprint!("{}", stderr);
@@ -2536,5 +2570,49 @@ no changes added to commit (use "git add" and/or "git commit -a")
             "Expected '+3 lines omitted' when 6 body lines truncated to 3, got:\n{}",
             result
         );
+    }
+
+    #[test]
+    fn test_filter_commit_hook_failure_strips_passed_keeps_failed() {
+        // git redirects hook output to stderr; stdout is empty on a hook-abort.
+        let stderr = "Trim Trailing Whitespace.................................................Passed\n\
+                      Check Yaml...............................................................Failed\n\
+                      - hook id: check-yaml\n\
+                      - exit code: 1\n";
+        let result = filter_commit_hook_failure("", stderr)
+            .expect("hook output should be detected and filtered");
+        assert!(result.contains("Check Yaml"));
+        assert!(result.contains("- hook id: check-yaml"));
+        assert!(!result.contains("Passed"));
+        assert!(!result.contains("Trim Trailing Whitespace"));
+    }
+
+    #[test]
+    fn test_filter_commit_hook_failure_strips_skipped() {
+        let stderr = "Validate pyproject.toml..............................(no files to check)Skipped\n\
+                      ruff.....................................................................Failed\n\
+                      - hook id: ruff\n";
+        let result = filter_commit_hook_failure("", stderr)
+            .expect("hook output should be detected and filtered");
+        assert!(result.contains("ruff"));
+        assert!(!result.contains("Skipped"));
+        assert!(!result.contains("pyproject.toml"));
+    }
+
+    #[test]
+    fn test_filter_commit_hook_failure_detects_on_stdout_too() {
+        // Tolerate frameworks that emit results on stdout.
+        let stdout = "Check Yaml...............................................................Failed\n\
+                      - hook id: check-yaml\n";
+        let result = filter_commit_hook_failure(stdout, "")
+            .expect("hook output on stdout should be detected");
+        assert!(result.contains("Check Yaml"));
+    }
+
+    #[test]
+    fn test_filter_commit_hook_failure_ignores_non_hook_output() {
+        // A plain commit error (no hook result lines) must pass through unfiltered.
+        let stderr = "error: pathspec 'foo' did not match any files\n";
+        assert!(filter_commit_hook_failure("", stderr).is_none());
     }
 }
