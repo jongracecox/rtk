@@ -6,7 +6,7 @@ strip_lines_matching = [
   "^\\[INFO\\] Installing environment",
   "^\\[INFO\\] Once installed this environment will be reused",
   "^\\[INFO\\] This may take a few minutes",
-  "\\.{3,}Passed\\s*$",
+  "\\.{3,}.*(Passed|Skipped)\\s*$",
   "^\\s*$",
 ]
 max_lines = 40
@@ -33,5 +33,24 @@ input = """
 [INFO] Once installed this environment will be reused.
 isort....................................................................Passed
 black....................................................................Passed
+"""
+expected = "pre-commit: all hooks passed"
+
+[[tests.pre-commit]]
+name = "strips skipped (no files to check) hooks"
+input = """
+Validate pyproject.toml..............................(no files to check)Skipped
+Validate DataAsset Implementations...................(no files to check)Skipped
+Check Yaml...............................................................Failed
+- hook id: check-yaml
+- exit code: 1
+"""
+expected = "Check Yaml...............................................................Failed\n- hook id: check-yaml\n- exit code: 1"
+
+[[tests.pre-commit]]
+name = "all skipped — emits on_empty summary"
+input = """
+Validate pyproject.toml..............................(no files to check)Skipped
+Validate SodaCL Check Syntax.........................(no files to check)Skipped
 """
 expected = "pre-commit: all hooks passed"

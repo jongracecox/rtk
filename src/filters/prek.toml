@@ -6,7 +6,7 @@ strip_lines_matching = [
   "^\\[INFO\\] Installing environment",
   "^\\[INFO\\] Once installed this environment will be reused",
   "^\\[INFO\\] This may take a few minutes",
-  "\\.{3,}Passed\\s*$",
+  "\\.{3,}.*(Passed|Skipped)\\s*$",
   "^\\s*$",
 ]
 max_lines = 40
@@ -30,5 +30,25 @@ input = """
 check yaml...............................................................Passed
 check for case conflicts.................................................Passed
 trim trailing whitespace.................................................Passed
+"""
+expected = "prek: all hooks passed"
+
+[[tests.prek]]
+name = "strips skipped (no files to check) hooks"
+input = """
+Validate pyproject.toml..............................(no files to check)Skipped
+Validate SodaCL Check Syntax.........................(no files to check)Skipped
+check yaml...............................................................Passed
+ruff.....................................................................Failed
+- hook id: ruff
+- exit code: 1
+"""
+expected = "ruff.....................................................................Failed\n- hook id: ruff\n- exit code: 1"
+
+[[tests.prek]]
+name = "all skipped — emits on_empty summary"
+input = """
+Validate pyproject.toml..............................(no files to check)Skipped
+Generate Core API Models.............................(no files to check)Skipped
 """
 expected = "prek: all hooks passed"
